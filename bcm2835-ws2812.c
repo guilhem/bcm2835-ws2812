@@ -177,7 +177,8 @@ static int ws2812_brightness(struct led_classdev *cdev, enum led_brightness valu
 
 	mutex_lock(&ctl->lock);
 	if (ctl->stopping) {
-		ret = -ESHUTDOWN;
+		/* Unregister flushes a final LED_OFF after quiesce sent black. */
+		ret = value == LED_OFF ? 0 : -ESHUTDOWN;
 		goto out;
 	}
 	ret = ws2812_desired(led, value);
