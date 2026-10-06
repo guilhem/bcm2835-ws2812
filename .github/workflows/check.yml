@@ -1,0 +1,79 @@
+name: check
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  encoder:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - run: make check
+  kernel:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: armv6
+            arch: arm
+            cross: arm-linux-gnueabihf-
+            dtb: bcm2708-rpi-zero-w.dtb
+          - target: arm64
+            arch: arm64
+            cross: aarch64-linux-gnu-
+            dtb: bcm2710-rpi-zero-2-w.dtb
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - run: sudo apt-get update && sudo apt-get install -y gcc-arm-linux-gnueabihf gcc-aarch64-linux-gnu flex bison bc libssl-dev libelf-dev device-tree-compiler
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: build/downloads
+          key: pi-kernel-${{ runner.os }}-${{ hashFiles('kernels.lock.json') }}-${{ matrix.target }}
+      - run: python3 ci/kernel.py ${{ matrix.target }}
+      - run: make modules overlay KDIR="$PWD/build/${{ matrix.target }}" ARCH=${{ matrix.arch }} CROSS_COMPILE=${{ matrix.cross }} W=1
+      - run: ci/overlay.sh build/downloads/${{ matrix.dtb }}
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: module-${{ matrix.target }}
+          path: |
+            bcm2835-ws2812.ko
+            bcm2835-ws2812.dtbo
+          if-no-files-found: error
+  release:
+    if: always() && startsWith(github.ref, 'refs/tags/v')
+    needs: [encoder, kernel]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Require every check to succeed
+        env:
+          ENCODER_RESULT: ${{ needs.encoder.result }}
+          KERNEL_RESULT: ${{ needs.kernel.result }}
+        run: |
+          test "$ENCODER_RESULT" = success
+          test "$KERNEL_RESULT" = success
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          pattern: module-*
+          path: modules
+      - name: Package tested modules and source
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          mkdir dist
+          git archive --format=tar --prefix=bcm2835-ws2812/ HEAD | gzip -n > "dist/bcm2835-ws2812-$RELEASE_TAG-source.tar.gz"
+          for target in armv6 arm64; do
+            tar -czf "dist/bcm2835-ws2812-$RELEASE_TAG-$target.tar.gz" -C "modules/module-$target" bcm2835-ws2812.ko bcm2835-ws2812.dtbo
+          done
+          cd dist
+          sha256sum ./*.tar.gz > SHA256SUMS
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" dist/* --verify-tag --generate-notes
