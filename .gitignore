@@ -7,3 +7,5 @@ Module.symvers
 modules.order
 /build/
 /dist/
+
+*.dtbo

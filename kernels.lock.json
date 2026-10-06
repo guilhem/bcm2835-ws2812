@@ -1,0 +1,31 @@
+{
+  "firmware": "d91dd52c88a3918028a0ca6bbe6fe40e91bee951",
+  "linux": "6c97cb0f7b2d4f8f86f3814dd990ab32e5a24f2c",
+  "source_sha256": "48d55f189cb0239d6c3943566b5df0c1a8f7e646bd21728c8e9cb180cbad56c4",
+  "targets": {
+    "armv6": {
+      "arch": "arm",
+      "cross_compile": "arm-linux-gnueabihf-",
+      "release": "6.18.55+",
+      "image": "kernel.img",
+      "symvers": "Module.symvers",
+      "dtb": "bcm2708-rpi-zero-w.dtb",
+      "image_sha256": "a7202b4c86f2e8dade15951e1dbd40976f6cc40f7775aaee243419ec0ade42c0",
+      "symvers_sha256": "c25008b4525f7524639ac40f884a5111518d7898df42eefc65fc8d2212162caa",
+      "dtb_sha256": "a0f0f011d0e60224f9761f7df0255508f622cc6952958781c800c476e2ee39d1",
+      "config_sha256": "a7b73ed2bdceefd0c3d7b3a6ac7d94d65f9b9355bf78461a2851233cfb2ba124"
+    },
+    "arm64": {
+      "arch": "arm64",
+      "cross_compile": "aarch64-linux-gnu-",
+      "release": "6.18.55-v8+",
+      "image": "kernel8.img",
+      "symvers": "Module8.symvers",
+      "dtb": "bcm2710-rpi-zero-2-w.dtb",
+      "image_sha256": "bb2b97293c9257755fb9f15657ca1d514d7164b0f034aab63b0b806fbf6711ab",
+      "symvers_sha256": "65b247d90a83e149299fd16a996690899ee24aa6a57416b7b0a4812d3b49f4e5",
+      "dtb_sha256": "ce3ca3176658cddfad2ef6414d858bad61ce5242382eb0755248ea0edfcb0783",
+      "config_sha256": "3d6fedf5caee5150195091fc2fe4ca867d32b09f598655bb4cc25efec7e51877"
+    }
+  }
+}

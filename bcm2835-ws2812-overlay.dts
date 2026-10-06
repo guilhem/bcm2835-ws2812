@@ -1,0 +1,46 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "brcm,bcm2835", "brcm,bcm2837";
+
+	fragment@0 {
+		target = <&gpio>;
+		__overlay__ {
+			ws2812_pins: ws2812-pins {
+				brcm,pins = <13>;
+				brcm,function = <4>; /* ALT0: PWM1 */
+				brcm,pull = <1>; /* pull down */
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&pwm>;
+		__overlay__ {
+			/* Replace the whole block; no brcm,bcm2835-pwm fallback. */
+			compatible = "guilhem,bcm2835-ws2812";
+			status = "okay";
+			pinctrl-names = "default";
+			pinctrl-0 = <&ws2812_pins>;
+			clocks = <&clocks 30>, <&clk_osc>; /* BCM2835_CLOCK_PWM, oscillator */
+			clock-names = "pwm", "osc";
+			assigned-clocks = <&clocks 30>;
+			assigned-clock-parents = <&clk_osc>;
+			assigned-clock-rates = <2400000>;
+			clock-frequency = <2400000>;
+			reset-us = <300>;
+			dmas = <&dma 5>; /* PWM DREQ, NOT physical DMA channel 5 */
+			dma-names = "tx";
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			led@0 { reg = <0>; label = "multi:indicator-0"; color = <8>; };
+			led@1 { reg = <1>; label = "multi:indicator-1"; color = <8>; };
+			led@2 { reg = <2>; label = "multi:indicator-2"; color = <8>; };
+			led@3 { reg = <3>; label = "multi:indicator-3"; color = <8>; };
+			led@4 { reg = <4>; label = "multi:indicator-4"; color = <8>; };
+		};
+	};
+};
