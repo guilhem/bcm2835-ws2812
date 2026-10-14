@@ -6,13 +6,13 @@
 
 static unsigned int bit_at(const u32 *words, unsigned int bit)
 {
-	return (words[bit / 32] >> (31 - bit % 32)) & 1U;
+	return (words[2 * (bit / 32) + 1] >> (31 - bit % 32)) & 1U;
 }
 
 int main(void)
 {
 	u8 rgb[WS2812_LEDS][3] = {{0}};
-	u32 words[WS2812_DATA_WORDS + 1];
+	u32 words[2 * WS2812_DATA_WORDS + 1];
 	unsigned int value, led, color, bit, pos;
 	const unsigned int grb[] = {1, 0, 2};
 
@@ -23,7 +23,9 @@ int main(void)
 				rgb[led][color] = (u8)(value + led * 31 + color * 67);
 		memset(words, 0xff, sizeof(words));
 		ws2812_encode(words, (const u8 (*)[3])rgb);
-		assert(words[WS2812_DATA_WORDS] == UINT32_MAX);
+		assert(words[2 * WS2812_DATA_WORDS] == UINT32_MAX);
+		for (pos = 0; pos < WS2812_DATA_WORDS; pos++)
+			assert(words[2 * pos] == 0);
 		pos = 0;
 		for (led = 0; led < WS2812_LEDS; led++)
 			for (color = 0; color < 3; color++)
@@ -38,7 +40,7 @@ int main(void)
 	}
 	memset(rgb, 0, sizeof(rgb));
 	ws2812_encode(words, (const u8 (*)[3])rgb);
-	assert(words[0] == 0x92492492U);
+	assert(words[1] == 0x92492492U);
 	puts("encoder: 256 patterns, all five LEDs, GRB, MSB first, padding and bounds OK");
 	return 0;
 }

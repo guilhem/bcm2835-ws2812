@@ -76,18 +76,19 @@ static void writel(u32 value, void *addr)
 {
 	if (addr == &regs[PWM_CTL / 4]) {
 		if (value & PWM_CTL_CLRF1) {
-			assert(value == (PWM_CTL_MODE2 | PWM_CTL_USEF2 | PWM_CTL_CLRF1));
+			assert(value == (PWM_CTL_MODE1 | PWM_CTL_USEF1 | PWM_CTL_MODE2 | PWM_CTL_USEF2 | PWM_CTL_CLRF1));
 			assert(regs[PWM_DMAC / 4] == 0);
 			prefill = 0;
 			readback = reset_held = false;
 			clears++;
 		} else if (value & PWM_CTL_PWEN2) {
-			assert(value == (PWM_CTL_MODE2 | PWM_CTL_USEF2 | PWM_CTL_PWEN2));
+			assert(value == (PWM_CTL_MODE1 | PWM_CTL_USEF1 | PWM_CTL_MODE2 | PWM_CTL_USEF2 | PWM_CTL_PWEN1 | PWM_CTL_PWEN2));
 			assert(prefill == 16 && dma_live);
+			assert(regs[PWM_RNG1 / 4] == 32 && regs[PWM_RNG2 / 4] == 32);
 		}
 		value &= ~PWM_CTL_CLRF1;
 	} else if (addr == &regs[PWM_FIFO / 4]) {
-		assert(regs[PWM_CTL / 4] == (PWM_CTL_MODE2 | PWM_CTL_USEF2));
+		assert(regs[PWM_CTL / 4] == (PWM_CTL_MODE1 | PWM_CTL_USEF1 | PWM_CTL_MODE2 | PWM_CTL_USEF2));
 		assert(regs[PWM_DMAC / 4] == 0 && reset_held);
 		assert(value == 0 && prefill < 16);
 		prefill++;
@@ -114,7 +115,7 @@ static struct dma_async_tx_descriptor *dmaengine_prep_slave_single(
 	struct dma_chan *chan, dma_addr_t addr, size_t bytes, int dir, int flags)
 {
 	(void)chan;
-	assert(addr == 123 && bytes > WS2812_DATA_WORDS * sizeof(u32));
+	assert(addr == 123 && bytes == 2 * (WS2812_DATA_WORDS + 23) * sizeof(u32));
 	assert(dir == DMA_MEM_TO_DEV && flags == (DMA_PREP_INTERRUPT | DMA_CTRL_ACK));
 	return &descriptor;
 }
@@ -195,13 +196,13 @@ static void frame(struct ws2812 *ctl)
 	terminations = diagnostics = clears = 0;
 	assert(ws2812_send(ctl) == (scenario == SUCCESS ? 0 : -ETIMEDOUT));
 	assert(terminations == 1 && clears == 2 && reset_held && !dma_live);
-	assert(regs[PWM_CTL / 4] == (PWM_CTL_MODE2 | PWM_CTL_USEF2));
+	assert(regs[PWM_CTL / 4] == (PWM_CTL_MODE1 | PWM_CTL_USEF1 | PWM_CTL_MODE2 | PWM_CTL_USEF2));
 	assert(regs[PWM_DMAC / 4] == 0 && !(regs[PWM_STA / 4] & PWM_ERRORS));
 	if (scenario != SUCCESS) {
 		snprintf(expected, sizeof(expected),
 			"%s timeout: PWM_CTL=%#x PWM_STA=%#x PWM_DMAC=%#x rate=2400000 Hz cookie=42 DMA_status=%d residue=%u\n",
 			scenario == DMA_TIMEOUT ? "DMA completion (75 ms)" : "FIFO drain (5 ms)",
-			PWM_CTL_MODE2 | PWM_CTL_USEF2 | PWM_CTL_PWEN2,
+			PWM_CTL_MODE1 | PWM_CTL_USEF1 | PWM_CTL_MODE2 | PWM_CTL_USEF2 | PWM_CTL_PWEN1 | PWM_CTL_PWEN2,
 			PWM_STA_BERR | PWM_STA_GAPO2, PWM_DMAC_EN | PWM_DMAC_THRESH,
 			scenario == DMA_TIMEOUT ? DMA_IN_PROGRESS : DMA_COMPLETE,
 			scenario == DMA_TIMEOUT ? 128U : 0U);
@@ -211,7 +212,7 @@ static void frame(struct ws2812 *ctl)
 
 int main(void)
 {
-	u32 buffer[WS2812_DATA_WORDS + 23] = { 0 };
+	u32 buffer[2 * (WS2812_DATA_WORDS + 23)] = { 0 };
 	struct ws2812 ctl = { .regs = (char *)regs, .buffer = buffer,
 		.buffer_dma = 123, .buffer_bytes = sizeof(buffer), .rate = 2400000,
 		.reset_us = 300 };

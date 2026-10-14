@@ -22,7 +22,11 @@
 #define PWM_STA 0x04
 #define PWM_DMAC 0x08
 #define PWM_FIFO 0x18
+#define PWM_RNG1 0x10
 #define PWM_RNG2 0x20
+#define PWM_CTL_PWEN1 BIT(0)
+#define PWM_CTL_MODE1 BIT(1)
+#define PWM_CTL_USEF1 BIT(5)
 #define PWM_CTL_PWEN2 BIT(8)
 #define PWM_CTL_MODE2 BIT(9)
 #define PWM_CTL_USEF2 BIT(13)
@@ -30,6 +34,7 @@
 #define PWM_STA_EMPTY BIT(1)
 #define PWM_STA_WERR BIT(2)
 #define PWM_STA_RERR BIT(3)
+#define PWM_STA_GAPO1 BIT(4)
 #define PWM_STA_GAPO2 BIT(5)
 #define PWM_STA_BERR BIT(8)
 #define PWM_ERRORS (PWM_STA_WERR | PWM_STA_RERR | PWM_STA_BERR)
@@ -69,14 +74,15 @@ struct ws2812 {
 static int ws2812_stop(struct ws2812 *ctl)
 {
 	u32 errors;
-	/* SBIT2=0 and RPTL2=0 leave the idle output low. */
+	/* SBIT1/2=0 and RPTL1/2=0 leave the idle outputs low. */
 	writel(0, ctl->regs + PWM_DMAC);
 	/* Configure the FIFO consumer before clearing/refilling it (BCM2835 p146). */
-	writel(PWM_CTL_MODE2 | PWM_CTL_USEF2 | PWM_CTL_CLRF1, ctl->regs + PWM_CTL);
+	writel(PWM_CTL_MODE1 | PWM_CTL_USEF1 | PWM_CTL_MODE2 |
+	       PWM_CTL_USEF2 | PWM_CTL_CLRF1, ctl->regs + PWM_CTL);
 	readl(ctl->regs + PWM_CTL);
 	usleep_range(ctl->reset_us, ctl->reset_us + 100);
 	errors = readl(ctl->regs + PWM_STA) & PWM_ERRORS;
-	writel(PWM_ERRORS | PWM_STA_GAPO2, ctl->regs + PWM_STA);
+	writel(PWM_ERRORS | PWM_STA_GAPO1 | PWM_STA_GAPO2, ctl->regs + PWM_STA);
 	return errors ? -EIO : 0;
 }
 
@@ -125,11 +131,13 @@ static int ws2812_send(struct ws2812 *ctl)
 	/* Prefill the shared 16-word FIFO with low bits before starting PWM. */
 	for (i = 0; i < 16; i++)
 		writel(0, ctl->regs + PWM_FIFO);
+	writel(32, ctl->regs + PWM_RNG1);
 	writel(32, ctl->regs + PWM_RNG2);
 	writel(PWM_DMAC_EN | PWM_DMAC_THRESH, ctl->regs + PWM_DMAC);
 	dma_async_issue_pending(ctl->dma);
-	writel(PWM_CTL_MODE2 | PWM_CTL_USEF2 | PWM_CTL_PWEN2,
-	       ctl->regs + PWM_CTL);
+	/* BCM2837 channel 2 stalls unless both FIFO serializers run. */
+	writel(PWM_CTL_MODE1 | PWM_CTL_USEF1 | PWM_CTL_PWEN1 |
+	       PWM_CTL_MODE2 | PWM_CTL_USEF2 | PWM_CTL_PWEN2, ctl->regs + PWM_CTL);
 
 	if (!wait_for_completion_timeout(&ctl->done,
 					 msecs_to_jiffies(DMA_TIMEOUT_MS))) {
@@ -148,7 +156,7 @@ static int ws2812_send(struct ws2812 *ctl)
 		ws2812_timeout(ctl, "FIFO drain (5 ms)", cookie);
 		goto stop_dma;
 	}
-	/* GAPO2 also occurs at normal EOF; it cannot classify an underrun here. */
+	/* GAPO1/2 also occur at normal EOF; it cannot classify an underrun here. */
 	if (status & PWM_ERRORS) {
 		ret = -EIO;
 		goto stop_dma;
@@ -401,7 +409,7 @@ static int ws2812_probe(struct platform_device *pdev)
 	if (ret)
 		goto release_dma;
 	/* Zero suffix includes a complete latch interval while the serializer runs. */
-	ctl->buffer_bytes = (WS2812_DATA_WORDS +
+	ctl->buffer_bytes = 2 * (WS2812_DATA_WORDS +
 		DIV_ROUND_UP(DIV_ROUND_UP(ctl->rate * ctl->reset_us, 1000000U), 32U)) * sizeof(u32);
 	ctl->buffer = dma_alloc_coherent(ctl->dma_dev, ctl->buffer_bytes,
 					 &ctl->buffer_dma, GFP_KERNEL);
