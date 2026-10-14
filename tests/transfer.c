@@ -83,7 +83,7 @@ static void writel(u32 value, void *addr)
 			clears++;
 		} else if (value & PWM_CTL_PWEN2) {
 			assert(value == (PWM_CTL_MODE1 | PWM_CTL_USEF1 | PWM_CTL_MODE2 | PWM_CTL_USEF2 | PWM_CTL_PWEN1 | PWM_CTL_PWEN2));
-			assert(prefill == 16 && dma_live);
+			assert(prefill == 16 && !dma_live);
 			assert(regs[PWM_RNG1 / 4] == 32 && regs[PWM_RNG2 / 4] == 32);
 		}
 		value &= ~PWM_CTL_CLRF1;
@@ -129,7 +129,7 @@ static dma_cookie_t dmaengine_submit(struct dma_async_tx_descriptor *desc)
 static void dma_async_issue_pending(struct dma_chan *chan)
 {
 	(void)chan;
-	assert(prefill == 16 && !(regs[PWM_CTL / 4] & PWM_CTL_PWEN2));
+	assert(prefill == 16 && (regs[PWM_CTL / 4] & PWM_CTL_PWEN2));
 	assert(regs[PWM_DMAC / 4] == (PWM_DMAC_EN | PWM_DMAC_THRESH));
 	dma_live = true;
 }

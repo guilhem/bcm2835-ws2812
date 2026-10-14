@@ -134,10 +134,11 @@ static int ws2812_send(struct ws2812 *ctl)
 	writel(32, ctl->regs + PWM_RNG1);
 	writel(32, ctl->regs + PWM_RNG2);
 	writel(PWM_DMAC_EN | PWM_DMAC_THRESH, ctl->regs + PWM_DMAC);
-	dma_async_issue_pending(ctl->dma);
 	/* BCM2837 channel 2 stalls unless both FIFO serializers run. */
 	writel(PWM_CTL_MODE1 | PWM_CTL_USEF1 | PWM_CTL_PWEN1 |
 	       PWM_CTL_MODE2 | PWM_CTL_USEF2 | PWM_CTL_PWEN2, ctl->regs + PWM_CTL);
+	/* Start FIFO consumers before paced DMA to avoid intermittent stalls. */
+	dma_async_issue_pending(ctl->dma);
 
 	if (!wait_for_completion_timeout(&ctl->done,
 					 msecs_to_jiffies(DMA_TIMEOUT_MS))) {
