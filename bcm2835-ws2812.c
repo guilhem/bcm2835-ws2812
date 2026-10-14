@@ -71,7 +71,8 @@ static int ws2812_stop(struct ws2812 *ctl)
 	u32 errors;
 	/* SBIT2=0 and RPTL2=0 leave the idle output low. */
 	writel(0, ctl->regs + PWM_DMAC);
-	writel(PWM_CTL_CLRF1, ctl->regs + PWM_CTL);
+	/* Configure the FIFO consumer before clearing/refilling it (BCM2835 p146). */
+	writel(PWM_CTL_MODE2 | PWM_CTL_USEF2 | PWM_CTL_CLRF1, ctl->regs + PWM_CTL);
 	readl(ctl->regs + PWM_CTL);
 	usleep_range(ctl->reset_us, ctl->reset_us + 100);
 	errors = readl(ctl->regs + PWM_STA) & PWM_ERRORS;
@@ -84,6 +85,18 @@ static void ws2812_dma_done(void *data)
 	struct ws2812 *ctl = data;
 
 	complete(&ctl->done);
+}
+
+static void ws2812_timeout(struct ws2812 *ctl, const char *stage,
+			   dma_cookie_t cookie)
+{
+	struct dma_tx_state state = { 0 };
+	enum dma_status status = dmaengine_tx_status(ctl->dma, cookie, &state);
+
+	dev_err(ctl->dev,
+		"%s timeout: PWM_CTL=%#x PWM_STA=%#x PWM_DMAC=%#x rate=%u Hz cookie=%d DMA_status=%d residue=%u\n",
+		stage, readl(ctl->regs + PWM_CTL), readl(ctl->regs + PWM_STA),
+		readl(ctl->regs + PWM_DMAC), ctl->rate, cookie, status, state.residue);
 }
 
 /* Caller holds lock. Completion means FIFO drained AND reset held low. */
@@ -120,6 +133,7 @@ static int ws2812_send(struct ws2812 *ctl)
 
 	if (!wait_for_completion_timeout(&ctl->done,
 					 msecs_to_jiffies(DMA_TIMEOUT_MS))) {
+		ws2812_timeout(ctl, "DMA completion (75 ms)", cookie);
 		ret = -ETIMEDOUT;
 		goto stop_dma;
 	}
@@ -130,8 +144,10 @@ static int ws2812_send(struct ws2812 *ctl)
 
 	ret = readl_poll_timeout(ctl->regs + PWM_STA, status,
 				status & PWM_STA_EMPTY, 10, FIFO_TIMEOUT_US);
-	if (ret)
+	if (ret) {
+		ws2812_timeout(ctl, "FIFO drain (5 ms)", cookie);
 		goto stop_dma;
+	}
 	/* GAPO2 also occurs at normal EOF; it cannot classify an underrun here. */
 	if (status & PWM_ERRORS) {
 		ret = -EIO;
@@ -363,8 +379,10 @@ static int ws2812_probe(struct platform_device *pdev)
 	}
 	ctl->rate = rate;
 	ret = clk_prepare_enable(ctl->clk);
-	if (ret)
+	if (ret) {
+		ret = dev_err_probe(dev, ret, "clock enable failed\n");
 		goto put_clock;
+	}
 	ws2812_stop(ctl);
 	ctl->dma = dma_request_chan(dev, "tx");
 	if (IS_ERR(ctl->dma)) {
@@ -393,8 +411,10 @@ static int ws2812_probe(struct platform_device *pdev)
 	}
 	memset(ctl->buffer, 0, ctl->buffer_bytes);
 	ret = ws2812_send(ctl);
-	if (ret)
+	if (ret) {
+		ret = dev_err_probe(dev, ret, "initial frame failed\n");
 		goto free_buffer;
+	}
 
 	/* 1..4 first; capture the native multicolor group, then add sync to LED 0. */
 	for (i = 1; i <= WS2812_LEDS; i++) {
