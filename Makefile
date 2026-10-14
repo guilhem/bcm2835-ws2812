@@ -19,9 +19,12 @@ check:
 	mkdir -p build
 	$(HOSTCC) -std=c99 -Wall -Wextra -Werror -pedantic tests/encode.c -o build/check-encode
 	./build/check-encode
+	python3 tests/transfer.py > build/ws2812-transfer-under-test.h
+	$(HOSTCC) -std=gnu99 -Wall -Wextra -Werror -Ibuild tests/transfer.c -o build/check-transfer
+	./build/check-transfer
 clean:
 	$(MAKE) -C $(KDIR) M=$(CURDIR) clean
-	rm -f bcm2835-ws2812.dtbo build/check-encode
+	rm -f bcm2835-ws2812.dtbo build/check-encode build/check-transfer build/ws2812-transfer-under-test.h
 install: modules overlay
 	$(MAKE) -C $(KDIR) M=$(CURDIR) INSTALL_MOD_PATH=$(DESTDIR) modules_install
 	install -D -m 0644 bcm2835-ws2812.dtbo $(DESTDIR)$(OVERLAYDIR)/bcm2835-ws2812.dtbo
